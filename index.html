@@ -260,7 +260,7 @@ function vSettings(){
   <p class="note">Le découpage dépend uniquement de ces deux dates : sur n'importe quel appareil avec les mêmes dates, le jour 3 contient toujours les mêmes questions. Par défaut : début le 25 novembre, examen le 8 décembre.</p>
   <hr style="border:0;border-top:1px solid var(--line);margin:18px 0">
   <label class="chk"><input type="checkbox" id="shuf" ${LS.get("shuf",false)?"checked":""}>Mélanger l'ordre des questions dans une session</label><br>
-  <label class="chk"><input type="checkbox" id="shufo" ${LS.get("shufo",false)?"checked":""}>Mélanger l'ordre des options (désactivé par défaut, les lettres restent celles du PDF)</label>
+  <label class="chk"><input type="checkbox" id="shufq" ${LS.get("shufq",true)?"checked":""}>Mélanger l'ordre des réponses en mode quiz (activé par défaut ; la lecture et les cartes gardent l'ordre du PDF)</label>
   <p class="note">Les questions marquées « difficiles » (${star.size}) et la session en cours sont gardées dans ce navigateur seulement. <button class="btn" data-act="clearstar">Effacer mes difficiles</button></p></div>`;
 }
 
@@ -268,7 +268,7 @@ function vSettings(){
 function shuffle(a){a=a.slice();for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}
 function startSession(title,ns,mode,extra){
   let qs=ns.slice();if(LS.get("shuf",false)||(extra&&extra.shuffle))qs=shuffle(qs);
-  const ord={};if(LS.get("shufo",false))qs.forEach(n=>ord[n]=shuffle(range(0,BYN[n].o.length-1)));
+  const ord={};if(mode==="quiz"&&LS.get("shufq",true))qs.forEach(n=>ord[n]=shuffle(range(0,BYN[n].o.length-1)));
   S=Object.assign({title,qs,mode,i:0,sel:{},done:{},rev:{},ord},extra||{});
   saveS();renderSession();window.scrollTo(0,0);
 }
@@ -279,10 +279,10 @@ function renderSession(){
   setTab("");document.body.classList.add("insess");
   if(S.i>=S.qs.length)return renderEnd();
   const n=S.qs[S.i],x=BYN[n],mode=S.mode,done=S.done[n]!=null,sel=S.sel[n]||[],rev=mode==="lecture"||S.rev[n]||done;
-  const need=x.a.length;
+  const need=x.a.length,ord=order(n),mixed=!!(S.ord&&S.ord[n]),LB=i=>L(mixed?ord.indexOf(i):i);
   let left="";if(S.deadline){const r=Math.max(0,Math.round((S.deadline-Date.now())/1000));left=` · ⏱ <span id="tm">${Math.floor(r/60)}:${String(r%60).padStart(2,"0")}</span>`}
   let h=`<div class="sbar"><button class="btn" data-act="quit">← Quitter</button><span><b>${esc(S.title)}</b> · ${S.i+1} / ${S.qs.length}${left}</span><div class="prog"><i style="width:${(S.i/S.qs.length*100).toFixed(1)}%"></i></div></div>`;
-  h+=`<div class="card panel"><div class="qmeta"><b>Question ${n}</b><span>page ${x.p} du PDF</span>${need>1?`<span>${need} réponses attendues</span>`:""}<button class="star ${star.has(n)?"on":""}" data-act="star" data-n="${n}">${star.has(n)?"★ Difficile":"☆ Marquer difficile"}</button></div>`;
+  h+=`<div class="card panel"><div class="qmeta"><b>Question ${n}</b><span>page ${x.p} du PDF</span>${mixed?"<span>réponses mélangées</span>":""}${need>1?`<span>${need} réponses attendues</span>`:""}<button class="star ${star.has(n)?"on":""}" data-act="star" data-n="${n}">${star.has(n)?"★ Difficile":"☆ Marquer difficile"}</button></div>`;
   h+=imgs(x,true)+`<div class="qtext">${esc(x.q)}</div>`+imgs(x,false);
   if(!x.o.length)h+=missing();
   else if(mode==="carte"&&!rev)h+=`<div class="opts">${order(n).map(i=>`<div class="opt" style="cursor:default"><span class="l">${L(i)}</span><span>${esc(x.o[i])}</span><span></span></div>`).join("")}</div>`;
@@ -292,8 +292,8 @@ function renderSession(){
       if(rev&&mode!=="quiz"){if(isA){c="good";m="Bonne réponse"}}
       else if(mode==="quiz"&&done){if(isA){c="good";m=isS?"Bonne réponse":"Réponse attendue"}else if(isS){c="bad";m="Faux"}}
       else if(isS)c="sel";
-      return `<button class="opt ${c}" data-act="pick" data-i="${i}" ${mode!=="quiz"||done?"disabled":""}><span class="l">${L(i)}</span><span>${esc(x.o[i])}</span><span class="m">${m}</span></button>`}).join("")}</div>`;
-    if(mode==="quiz"&&done)h+=`<div class="verdict ${S.done[n]?"ok":"ko"}">${S.done[n]?"Correct.":"Incorrect. Bonne réponse : "+x.a.map(L).join(", ")}</div>`;
+      return `<button class="opt ${c}" data-act="pick" data-i="${i}" ${mode!=="quiz"||done?"disabled":""}><span class="l">${LB(i)}</span><span>${esc(x.o[i])}</span><span class="m">${m}</span></button>`}).join("")}</div>`;
+    if(mode==="quiz"&&done)h+=`<div class="verdict ${S.done[n]?"ok":"ko"}">${S.done[n]?"Correct.":"Incorrect. Bonne réponse : "+x.a.map(LB).sort().join(", ")}</div>`;
   }
   if(mode==="carte"&&rev&&x.o.length)h+=`<div class="back" style="margin-top:14px"><h3>Réponse</h3>${x.a.map(i=>`<p>${L(i)}. ${esc(x.o[i])}</p>`).join("")}</div>`;
   let main="";
@@ -332,7 +332,7 @@ function route(){
   if(v==="questions")libRender();
 }
 window.addEventListener("hashchange",()=>{S=null;route();window.scrollTo(0,0)});
-document.addEventListener("input",e=>{if(["q","onlystar","showans"].includes(e.target.id))libRender();if(e.target.id==="shuf")LS.set("shuf",e.target.checked);if(e.target.id==="shufo")LS.set("shufo",e.target.checked)});
+document.addEventListener("input",e=>{if(["q","onlystar","showans"].includes(e.target.id))libRender();if(e.target.id==="shuf")LS.set("shuf",e.target.checked);if(e.target.id==="shufq")LS.set("shufq",e.target.checked)});
 document.addEventListener("click",e=>{
   const b=e.target.closest("[data-act],[data-day]");if(!b)return;
   const a=b.dataset.act;
